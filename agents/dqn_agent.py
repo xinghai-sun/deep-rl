@@ -8,6 +8,7 @@ from torch.autograd import Variable
 import torch.optim as optim
 from gym import wrappers
 from gym import spaces
+from agents.base_agent import BaseAgent
 from agents.memory import ReplayMemory, Transition
 
 
@@ -23,7 +24,7 @@ class FCNet(nn.Module):
         return x
 
 
-class DQNAgent(object):
+class DQNAgent(BaseAgent):
     '''Deep Q-learning agent.'''
 
     def __init__(self,
@@ -32,13 +33,13 @@ class DQNAgent(object):
                  batch_size=128,
                  learning_rate=1e-3,
                  discount=1.0,
-                 eps=0.05):
+                 epsilon=0.05):
         if not isinstance(action_space, spaces.Discrete):
             raise TypeError("Action space type should be Discrete.")
         self._action_space = action_space
         self._batch_size = batch_size
         self._discount = discount
-        self._eps = eps
+        self._epsilon = epsilon
         self._q_network = FCNet(
             input_size=reduce(lambda x, y: x * y, observation_space.shape),
             output_size=action_space.n)
@@ -47,7 +48,7 @@ class DQNAgent(object):
         self._memory = ReplayMemory(100000)
 
     def act(self, observation):
-        if np.random.random() >= self._eps:
+        if np.random.random() >= self._epsilon:
             q_values = self._q_network(
                 Variable(torch.FloatTensor([observation]).view(1, -1)))
             _, action = q_values[0].data.max(0)
