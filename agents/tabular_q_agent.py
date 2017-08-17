@@ -2,9 +2,10 @@ from collections import defaultdict
 import numpy as np
 from gym import spaces
 import copy
+from agents.base_agent import BaseAgent
 
 
-class TabularQAgent(object):
+class TabularQAgent(BaseAgent):
     '''Tabular Q-learning agent.'''
 
     def __init__(self,
@@ -13,7 +14,7 @@ class TabularQAgent(object):
                  q_init=0.0,
                  learning_rate=0.1,
                  discount=1.0,
-                 epsilon=0.01):
+                 epsilon=0.05):
         if not isinstance(action_space, spaces.Discrete):
             raise TypeError("Action space type should be Discrete.")
         if not isinstance(observation_space, spaces.Discrete):
