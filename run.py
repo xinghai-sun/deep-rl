@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from agents.dqn_agent import DQNAgent
 from agents.random_agent import RandomAgent
 from agents.tabular_q_agent import TabularQAgent
+from envs.pong_env import Pong2PEnv
 
 
 def create_env(conf):
