@@ -1,50 +1,43 @@
-from scipy.misc import imresize
-from skimage import color
+import cv2
 import gym
-from gym import spaces
 import numpy as np
 
 
-class RescaleFrameWrapper(gym.Wrapper):
-    def __init__(self, env, target_size=(84, 84), grayscale=True):
-        super(RescaleFrameWrapper, self).__init__(env)
-        self._target_size = target_size
-        self._grayscale = grayscale
-        channel = 1 if grayscale else self.env.observation_space.shape[2]
-        self.observation_space = spaces.Box(
-            low=0, high=255, shape=(target_size[0], target_size[1], channel))
+class AtariRescale42x42Wrapper(gym.ObservationWrapper):
+    def __init__(self, env=None):
+        super(AtariRescale42x42Wrapper, self).__init__(env)
+        self.observation_space = gym.spaces.Box(0.0, 1.0, [1, 42, 42])
 
-    def _step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        return self._observation(obs), reward, done, info
+    def _observation(self, observation):
+        return self._process_frame(observation)
 
-    def _reset(self):
-        obs = self.env.reset()
-        return self._observation(obs)
-
-    def _observation(self, obs):
-        assert obs.ndim == 3 and (obs.shape[2] == 3 or obs.shape[2] == 1)
-        obs = imresize(obs, self._target_size)
-        if self._grayscale and obs.shape[2] == 3:
-            obs = np.expand_dims(color.rgb2gray(obs), 2)
-        return obs
+    def _process_frame(self, frame):
+        assert (frame.ndim == 3 and
+                (frame.shape[2] == 3 or frame.shape[2] == 1) and
+                frame.shape[0] == 210 and frame.shape[1] == 160)
+        frame = cv2.resize(frame, (42, 42))
+        frame = frame.mean(2, dtype=np.float32)
+        frame /= 255.0
+        return np.expand_dims(frame, axis=0)
 
 
-class TransposeNormalizeWrapper(gym.Wrapper):
-    def __init__(self, env):
-        super(TransposeNormalizeWrapper, self).__init__(env)
-        obs_shape = self.env.observation_space.shape
-        self.observation_space = spaces.Box(
-            low=0, high=1.0, shape=(obs_shape[2], obs_shape[0], obs_shape[1]))
+class NormalizeWrapper(gym.ObservationWrapper):
+    def __init__(self, env=None):
+        super(NormalizeWrapper, self).__init__(env)
+        self._state_mean = 0
+        self._state_std = 0
+        self._alpha = 0.9999
+        self._num_steps = 0
 
-    def _step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        return self._observation(obs), reward, done, info
-
-    def _reset(self):
-        obs = self.env.reset()
-        return self._observation(obs)
-
-    def _observation(self, obs):
-        assert obs.ndim == 3
-        return np.transpose(obs / 255.0, (2, 0, 1))
+    def _observation(self, observation):
+        self._num_steps += 1
+        self._state_mean = self._state_mean * self._alpha + \
+            observation.mean() * (1 - self._alpha)
+        self._state_std = self._state_std * self._alpha + \
+            observation.std() * (1 - self._alpha)
+        unbiased_mean = self._state_mean / (
+            1 - pow(self._alpha, self._num_steps))
+        unbiased_std = self._state_std / (
+            1 - pow(self._alpha, self._num_steps))
+        normalized_obs = (observation - unbiased_mean) / (unbiased_std + 1e-8)
+        return normalized_obs
