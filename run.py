@@ -2,23 +2,41 @@ import os
 import argparse
 import yaml
 import gym
+from gym import wrappers
 import matplotlib.pyplot as plt
 from agents.dqn_agent import DQNAgent
+from agents.conv_dqn_agent import ConvDQNAgent
 from agents.random_agent import RandomAgent
 from agents.tabular_q_agent import TabularQAgent
+from envs.pong_env import Pong2PEnv
+from wrappers.process_frame import ResizeFrameWrapper
 
 
 def create_env(conf):
     env = gym.make(conf['env'])
     env.seed(0)
+    return env
+
+
+def wrapper_env(conf, env):
     if conf['monitor_dir']:
-        env = wrappers.Monitor(env, conf['monitor'], force=True)
+        env = wrappers.Monitor(env, conf['monitor_dir'], force=True)
+    if conf['agent'] == "conv_dqn":
+        env = ResizeFrameWrapper(env)
     return env
 
 
 def create_agent(conf, action_space, observation_space):
     if conf['agent'] == "dqn":
         return DQNAgent(
+            action_space,
+            observation_space,
+            batch_size=conf['batch_size'],
+            learning_rate=conf['learning_rate'],
+            discount=conf['discount'],
+            epsilon=conf['random_explore'])
+    elif conf['agent'] == "conv_dqn":
+        return ConvDQNAgent(
             action_space,
             observation_space,
             batch_size=conf['batch_size'],
@@ -61,6 +79,7 @@ def run_all():
 def run(conf):
     print("----- Running job [%s] ----- " % conf['job_name'])
     env = create_env(conf)
+    env = wrapper_env(conf, env)
     agent = create_agent(conf, env.action_space, env.observation_space)
     return_list = []
     for episode in xrange(conf['num_episodes']):
@@ -68,6 +87,7 @@ def run(conf):
         observation = env.reset()
         done = False
         while not done:
+            #env.render()
             action = agent.act(observation)
             next_observation, reward, done, _ = env.step(action)
             agent.learn(observation, action, reward, next_observation, done)
