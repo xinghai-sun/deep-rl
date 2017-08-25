@@ -15,6 +15,7 @@ class AtariRescale42x42Wrapper(gym.ObservationWrapper):
         assert (frame.ndim == 3 and
                 (frame.shape[2] == 3 or frame.shape[2] == 1) and
                 frame.shape[0] == 210 and frame.shape[1] == 160)
+        frame = frame[34:34 + 160, :160]
         frame = cv2.resize(frame, (42, 42))
         frame = frame.mean(2, dtype=np.float32)
         frame /= 255.0

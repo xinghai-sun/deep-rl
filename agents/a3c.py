@@ -16,8 +16,8 @@ class ActorCriticNet(nn.Module):
         self.conv3 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
         self.conv4 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
         self.lstm = nn.LSTMCell(32 * 3 * 3, 256)
-        self.actor_fc = nn.Linear(256, num_output)
         self.critic_fc = nn.Linear(256, 1)
+        self.actor_fc = nn.Linear(256, num_output)
         self.softmax = nn.Softmax()
 
     def forward(self, x, (h, c)):
@@ -59,14 +59,14 @@ class A3CAgent(object):
         self._shared_model.share_memory()
 
     def act(self, observation):
-        prop, value, self._lstm_hc = self._shared_model(
+        prob, value, (self._lstm_h, self._lstm_c) = self._shared_model(
             Variable(torch.from_numpy(observation).unsqueeze(0)),
-            self._lstm_hc)
-        _, action = prop[0].data.max(0)
+            (self._lstm_h, self._lstm_c))
+        _, action = prob[0].data.max(0)
         return action[0]
 
     def reset(self):
-        self._lstm_hc = (None, None)
+        self._lstm_h, self._lstm_c = None, None
 
     def learn_async(self, env_generator, num_processes, enable_test=True):
         self._env_generator = env_generator
@@ -87,7 +87,7 @@ class A3CAgent(object):
         torch.manual_seed(process_id)
         env = self._env_generator()
         env.seed(process_id)
-        optimizer = optim.RMSprop(
+        optimizer = optim.Adam(
             self._shared_model.parameters(), lr=self._learning_rate)
         # prepare local model
         model = ActorCriticNet(
@@ -95,47 +95,53 @@ class A3CAgent(object):
             num_output=env.action_space.n)
         # explore and learn
         observation = env.reset()
-        lstm_hc = (None, None)
         done = True
         cum_rewards = 0
         while True:
             model.load_state_dict(self._shared_model.state_dict())
+            if done:
+                lstm_h, lstm_c = None, None
+            else:
+                lstm_h = Variable(lstm_h.data)
+                lstm_c = Variable(lstm_c.data)
+
             rewards, values, log_probs, entropies = [], [], [], []
             # take n-step actions
             for step in xrange(self._t_max):
-                prob, value, (hx, cx) = model(
+                prob, value, (lstm_h, lstm_c) = model(
                     Variable(torch.from_numpy(observation).unsqueeze(0)),
-                    lstm_hc)
-                lstm_hc = (Variable(hx.data), Variable(cx.data))
+                    (lstm_h, lstm_c))
                 log_prob = torch.log(prob)
+                entropy = -(log_prob * prob).sum(1)
                 action = prob.multinomial(1).data
                 action_log_prob = log_prob.gather(1, Variable(action))
                 observation, reward, done, _ = env.step(action[0, 0])
-                entropy = -(log_prob * prob).sum(1)
+
                 rewards.append(reward)
                 values.append(value)
                 log_probs.append(action_log_prob)
                 entropies.append(entropy)
+
                 cum_rewards += reward
                 if done:
                     observation = env.reset()
-                    lstm_hc = (None, None)
-                    print(cum_rewards)
+                    if process_id == 0:
+                        print(cum_rewards)
                     cum_rewards = 0
                     break
 
-            value_loss, policy_loss = 0, 0
             R = torch.zeros(1, 1)
             if not done:
                 _, value, _ = model(
                     Variable(torch.from_numpy(observation).unsqueeze(0)),
-                    lstm_hc)
+                    (lstm_h, lstm_c))
                 R = value.data
             values.append(Variable(R))
             R = Variable(R)
             gae = torch.zeros(1, 1)
 
             # n-step loss
+            value_loss, policy_loss = 0, 0
             for i in reversed(range(len(rewards))):
                 R = self._discount * R + rewards[i]
                 advantage = R - values[i]
@@ -153,6 +159,7 @@ class A3CAgent(object):
             torch.nn.utils.clip_grad_norm(model.parameters(), 40)
             self._share_grads(model)
             optimizer.step()
+            optimizer.step()
 
         env.close()
 
@@ -168,20 +175,21 @@ class A3CAgent(object):
         model.eval()
         # explore and learn
         model.load_state_dict(self._shared_model.state_dict())
-        lstm_hc = (None, None)
+        lstm_h, lstm_c = None, None
         observation = env.reset()
         done = True
         cum_rewards = 0
         time_start = time.time()
         while True:
-            prob, _, lstm_hc = model(
-                Variable(torch.from_numpy(observation).unsqueeze(0)), lstm_hc)
+            prob, _, (lstm_h, lstm_c) = model(
+                Variable(torch.from_numpy(observation).unsqueeze(0)),
+                (lstm_h, lstm_c))
             _, action = prob[0].data.max(0)
             observation, reward, done, _ = env.step(action[0])
             cum_rewards += reward
             if done:
                 model.load_state_dict(self._shared_model.state_dict())
-                lstm_hc = (None, None)
+                lstm_h, lstm_c = None, None
                 observation = env.reset()
                 print('[Time=%f] Test Cummutive Rewards: %f' %
                       (time.time() - time_start, cum_rewards))
