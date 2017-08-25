@@ -1,5 +1,6 @@
 import gym
 import time
+import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -45,18 +46,23 @@ class A3CAgent(object):
                  observation_space,
                  learning_rate=1e-4,
                  discount=1.0,
-                 t_max=20):
+                 t_max=20,
+                 save_to_team=None):
         if not isinstance(action_space, gym.spaces.Discrete):
             raise TypeError("Action space type should be Discrete.")
         self._learning_rate = learning_rate
         self._discount = discount
         self._t_max = t_max
+        self._save_to_team = save_to_team
         self.reset()
 
         self._shared_model = ActorCriticNet(
             num_channel_input=observation_space.shape[0],
             num_output=action_space.n)
         self._shared_model.share_memory()
+
+        if self._save_to_team is not None:
+            self._save_to_team.append(copy.deepcopy(self))
 
     def act(self, observation):
         prob, value, (self._lstm_h, self._lstm_c) = self._shared_model(
@@ -97,6 +103,7 @@ class A3CAgent(object):
         observation = env.reset()
         done = True
         cum_rewards = 0
+        num_async_update = 0
         while True:
             model.load_state_dict(self._shared_model.state_dict())
             if done:
@@ -161,6 +168,11 @@ class A3CAgent(object):
             optimizer.step()
             optimizer.step()
 
+            if self._save_to_team is not None and num_async_update % 10 == 0:
+                self._save_to_team.append(copy.deepcopy(self))
+            num_async_update += 1
+            print(agent_team)
+
         env.close()
 
     def _async_tester(self, process_id):
@@ -191,8 +203,8 @@ class A3CAgent(object):
                 model.load_state_dict(self._shared_model.state_dict())
                 lstm_h, lstm_c = None, None
                 observation = env.reset()
-                print('[Time=%f] Test Cummutive Rewards: %f' %
-                      (time.time() - time_start, cum_rewards))
+                print('[Time=%.1f min] Test Cummutive Rewards: %f' % (
+                    (time.time() - time_start) / 60.0, cum_rewards))
                 cum_rewards = 0
                 time.sleep(60)
         env.close()

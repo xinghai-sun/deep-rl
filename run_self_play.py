@@ -1,12 +1,14 @@
 import argparse
 import os
 import yaml
+from collections import deque
 import gym
 from gym import wrappers
 from agents.a3c import A3CAgent
-from envs.pong_env import PongSinglePlayerEnv
+from envs.pong_env import Pong1PEnv
 from wrappers.process_frame import AtariRescale42x42Wrapper
 from wrappers.process_frame import NormalizeWrapper
+from wrappers.multiagent_env import AddOneOpponentWrapper
 
 
 def create_async_agent(conf, action_space, observation_space):
@@ -31,15 +33,18 @@ def run_all():
 def run_async(conf):
     print("----- Running job [%s] ----- " % conf['job_name'])
 
+    agent_team = deque(maxlen=50)
+
     def env_generator():
         env = gym.make(conf['env'])
         env = AtariRescale42x42Wrapper(env)
         env = NormalizeWrapper(env)
+        env = AddOneOpponentWrapper(env, agent_team)
         return env
 
     env = env_generator()
     agent = create_async_agent(conf, env.action_space, env.observation_space)
-    agent.learn_async(env_generator, conf['num_processes'], enable_test=True)
+    agent.learn_async(env_generator, conf['num_processes'], enable_test=False)
     env.close()
 
 

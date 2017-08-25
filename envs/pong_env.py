@@ -7,121 +7,29 @@ import gym
 from gym import error, spaces, utils
 from gym.utils import seeding
 
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
 
-class Pong2PEnv(gym.Env):
+
+class PongSinglePlayerEnv(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array']}
 
-    def __init__(self,
-                 screen_size=(400, 300),
-                 bat_height=50,
-                 ball_speed=2,
-                 bat_speed=2,
-                 max_round=20):
-        self._screen_width, self._screen_height = screen_size
-        self.observation_space = spaces.Tuple([
-            spaces.Box(
-                low=0,
-                high=255,
-                shape=(self._screen_height, self._screen_width, 3)),
-            spaces.Box(
-                low=0,
-                high=255,
-                shape=(self._screen_height, self._screen_width, 3))
-        ])
-        self.action_space = spaces.Tuple(
-            [spaces.Discrete(3), spaces.Discrete(3)])
+    def __init__(self, ball_speed=1, bat_speed=1, max_round=20):
+        SCREEN_WIDTH, SCREEN_HEIGHT = 160, 210
 
-        pygame.init()
-        self._surface = pygame.Surface((self._screen_width,
-                                        self._screen_height))
-
-        self._game = PongGame(
-            mode='double',
-            window_size=screen_size,
-            bat_height=bat_height,
-            ball_speed=ball_speed,
-            bat_speed=bat_speed,
-            max_round=max_round)
-        self._viewer = None
-
-    def _step(self, action):
-        assert self.action_space.contains(action)
-        left_player_action, right_player_action = action
-        bat_directions = [-1, 0, 1]
-        rewards, done = self._game.step(bat_directions[left_player_action],
-                                        bat_directions[right_player_action])
-        obs = self._get_screen_img_double_player()
-        return (obs, rewards, done, {})
-
-    def _reset(self):
-        self._game.restart()
-        obs = self._get_screen_img_double_player()
-        return obs
-
-    def _render(self, mode='human', close=False):
-        if close:
-            if self._viewer is not None:
-                self._viewer.close()
-                self._viewer = None
-            pygame.quit()
-            return
-        img = self._get_screen_img()
-        if mode == 'rgb_array':
-            return img
-        elif mode == 'human':
-            from gym.envs.classic_control import rendering
-            if self._viewer is None:
-                self._viewer = rendering.SimpleImageViewer()
-            self._viewer.imshow(img)
-
-    def _get_screen_img_double_player(self):
-        self._game.draw(self._surface)
-        surface_flipped = pygame.transform.flip(self._surface, True, True)
-        self._game.draw_scoreboard(self._surface)
-        self._game.draw_scoreboard(surface_flipped)
-        obs = self._surface_to_img(self._surface)
-        obs_flip = self._surface_to_img(surface_flipped)
-        return obs, obs_flip
-
-    def _get_screen_img(self):
-        self._game.draw(self._surface)
-        self._game.draw_scoreboard(self._surface)
-        obs = self._surface_to_img(self._surface)
-        return obs
-
-    def _surface_to_img(self, surface):
-        img = pygame.surfarray.array3d(surface).astype(np.uint8)
-        return np.transpose(img, (1, 0, 2))
-
-
-class Pong1PEnv(gym.Env):
-    metadata = {'render.modes': ['human', 'rgb_array']}
-
-    def __init__(self,
-                 screen_size=(400, 300),
-                 bat_height=50,
-                 ball_speed=2,
-                 bat_speed=2,
-                 max_round=20):
-        self._screen_width, self._screen_height = screen_size
         self.observation_space = spaces.Box(
-            low=0,
-            high=255,
-            shape=(self._screen_height, self._screen_width, 3))
+            low=0, high=255, shape=(SCREEN_HEIGHT, SCREEN_WIDTH, 3))
         self.action_space = spaces.Discrete(3)
 
         pygame.init()
-        self._surface = pygame.Surface((self._screen_width,
-                                        self._screen_height))
-
+        self._surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        self._viewer = None
         self._game = PongGame(
-            mode='single',
-            window_size=screen_size,
-            bat_height=bat_height,
+            has_double_players=False,
+            window_size=(SCREEN_WIDTH, SCREEN_HEIGHT),
             ball_speed=ball_speed,
             bat_speed=bat_speed,
             max_round=max_round)
-        self._viewer = None
 
     def _step(self, action):
         assert self.action_space.contains(action)
@@ -162,58 +70,104 @@ class Pong1PEnv(gym.Env):
         return np.transpose(img, (1, 0, 2))
 
 
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
+class PongDoublePlayerEnv(PongSinglePlayerEnv):
+    metadata = {'render.modes': ['human', 'rgb_array']}
+
+    def __init__(self, ball_speed=1, bat_speed=1, max_round=20):
+        SCREEN_WIDTH, SCREEN_HEIGHT = 160, 210
+        self.observation_space = spaces.Tuple([
+            spaces.Box(
+                low=0, high=255, shape=(SCREEN_HEIGHT, SCREEN_WIDTH, 3)),
+            spaces.Box(
+                low=0, high=255, shape=(SCREEN_HEIGHT, SCREEN_WIDTH, 3))
+        ])
+        self.action_space = spaces.Tuple(
+            [spaces.Discrete(3), spaces.Discrete(3)])
+
+        pygame.init()
+        self._surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+
+        self._viewer = None
+        self._game = PongGame(
+            has_double_players=True,
+            window_size=(SCREEN_WIDTH, SCREEN_HEIGHT),
+            ball_speed=ball_speed,
+            bat_speed=bat_speed,
+            max_round=max_round)
+
+    def _step(self, action):
+        assert self.action_space.contains(action)
+        left_player_action, right_player_action = action
+        bat_directions = [-1, 0, 1]
+        rewards, done = self._game.step(bat_directions[left_player_action],
+                                        bat_directions[right_player_action])
+        obs = self._get_screen_img_double_player()
+        return (obs, rewards, done, {})
+
+    def _reset(self):
+        self._game.restart()
+        obs = self._get_screen_img_double_player()
+        return obs
+
+    def _get_screen_img_double_player(self):
+        self._game.draw(self._surface)
+        surface_flipped = pygame.transform.flip(self._surface, True, True)
+        self._game.draw_scoreboard(self._surface)
+        self._game.draw_scoreboard(surface_flipped)
+        obs = self._surface_to_img(self._surface)
+        obs_flip = self._surface_to_img(surface_flipped)
+        return obs, obs_flip
 
 
 class PongGame():
     def __init__(self,
-                 mode,
-                 window_size=(400, 300),
-                 line_thickness=10,
-                 bat_height=50,
-                 ball_speed=5,
-                 bat_speed=5,
+                 has_double_players=False,
+                 window_size=(160, 210),
+                 top_border_thickness=34,
+                 bat_height=15,
+                 bat_width=5,
+                 bat_offset=16,
+                 ball_size=4,
+                 ball_speed=1,
+                 bat_speed=1,
                  max_round=20):
-        self._mode = mode
         self._max_round = max_round
+        self._has_double_players = has_double_players
         self._score_left, self._score_right = 0, 0
 
-        self._arena = Arena(window_size, line_thickness)
-        self._ball = Ball(self._arena.centerx - line_thickness // 2,
-                          self._arena.centery - line_thickness // 2,
-                          line_thickness, ball_speed)
-        self._left_bat = Bat(30, self._arena.centery - bat_height // 2,
-                             line_thickness, bat_height, bat_speed)
-        if mode == 'double':
-            self._right_bat = Bat(self._arena.right - line_thickness - 30,
+        self._arena = Arena(window_size, top_border_thickness)
+        self._ball = Ball(self._arena.centerx - ball_size // 2,
+                          self._arena.centery - ball_size // 2, ball_size,
+                          ball_speed)
+        self._left_bat = Bat(bat_offset, self._arena.centery - bat_height // 2,
+                             bat_width, bat_height, bat_speed)
+        if self._has_double_players:
+            self._right_bat = Bat(self._arena.right - bat_width - bat_offset,
                                   self._arena.centery - bat_height // 2,
-                                  line_thickness, bat_height, bat_speed)
-        elif mode == 'single':
-            self._right_bat = AutoBat(self._arena.right - line_thickness - 30,
-                                      self._arena.centery - bat_height // 2,
-                                      line_thickness, bat_height, bat_speed)
+                                  bat_width, bat_height, bat_speed)
         else:
-            raise ArgmentException("Game mode [%s] is not supported.")
-        self._scoreboard = Scoreboard(self._arena.centerx + 25,
-                                      self._arena.top + 25)
+            self._right_bat = AutoBat(
+                self._arena.right - bat_width - bat_offset,
+                self._arena.centery - bat_height // 2, bat_width, bat_height,
+                bat_speed)
+        self._scoreboard = Scoreboard(20, 8, font_size=20)
 
-    def step(self, left_bat_dir, right_bat_dir):
+    def step(self, left_bat_move_dir, right_bat_move_dir):
         self._ball.move(self._arena, self._left_bat, self._right_bat)
-        self._left_bat.move(left_bat_dir, self._arena)
-        if self._mode == 'double':
-            self._right_bat.move(right_bat_dir, self._arena)
-        elif self._mode == 'single':
+        self._left_bat.move(self._arena, left_bat_move_dir)
+        if self._has_double_players:
+            self._right_bat.move(self._arena, right_bat_move_dir)
+        else:
             self._right_bat.move(self._arena, self._ball)
 
-        if self._ball.out_of_arena(self._arena) == 1:
+        if self._ball.left_out_of_arena(self._arena):
             self._score_right += 1
             rewards = (-1, 1)
-            self._reset()
-        elif self._ball.out_of_arena(self._arena) == 2:
+            self._ball.reset()
+        elif self._ball.right_out_of_arena(self._arena):
             self._score_left += 1
             rewards = (1, -1)
-            self._reset()
+            self._ball.reset()
         else:
             rewards = (0, 0)
 
@@ -223,14 +177,11 @@ class PongGame():
             done = False
         return rewards, done
 
-    def _reset(self):
+    def restart(self):
+        self._score_left, self._score_right = 0, 0
         self._ball.reset()
         self._left_bat.reset()
         self._right_bat.reset()
-
-    def restart(self):
-        self._score_left, self._score_right = 0, 0
-        self._reset()
 
     def draw(self, surface):
         self._arena.draw(surface)
@@ -243,20 +194,14 @@ class PongGame():
 
 
 class Arena(pygame.sprite.Sprite):
-    def __init__(self, window_size, border_thickness):
-        self._window_width, self._window_height = window_size
-        self._border_thickness = border_thickness
-        self._rect = pygame.Rect(
-            self._border_thickness, self._border_thickness,
-            self._window_width - 2 * self._border_thickness,
-            self._window_height - 2 * self._border_thickness)
+    def __init__(self, window_size, top_border_thickness):
+        window_width, window_height = window_size
+        self._rect = pygame.Rect(0, top_border_thickness, window_width,
+                                 window_width)
 
     def draw(self, surface):
         surface.fill(WHITE)
         pygame.draw.rect(surface, BLACK, self._rect)
-        pygame.draw.line(surface, WHITE, (self._window_width // 2, 0),
-                         (self._window_width // 2, self._window_height),
-                         (self._border_thickness // 4))
 
     @property
     def left(self):
@@ -287,61 +232,66 @@ class Ball(pygame.sprite.Sprite):
     def __init__(self, x, y, size, speed):
         self._x_init, self._y_init = x, y
         self._speed = speed
-        self._dir_x = random.uniform(-1, 1)
-        self._dir_y = random.uniform(-1, 1)
         self._rect = pygame.Rect(x, y, size, size)
+        self.reset()
 
     def reset(self):
         self._rect.x = self._x_init
         self._rect.y = self._y_init
-        self._dir_x = random.uniform(-1, 1)
-        self._dir_y = random.uniform(-1, 1)
+        self._speed_x = random.choice([-self._speed, self._speed])
+        self._speed_y = random.choice([-self._speed, self._speed])
 
     def draw(self, surface):
         pygame.draw.rect(surface, WHITE, self._rect)
 
     def move(self, arena, left_bat, right_bat):
-        self._rect.x += (self._dir_x * self._speed)
-        self._rect.y += (self._dir_y * self._speed)
+        self._rect.x += (self._speed_x * self._speed)
+        self._rect.y += (self._speed_y * self._speed)
 
-        if self._dir_y < 0 and self._rect.top <= arena.top:
-            self._bounce('y')
+        if self._speed_y < 0 and self._rect.top <= arena.top:
+            self._bounce('y', 0)
             self._rect.top = arena.top
-        if self._dir_y > 0 and self._rect.bottom >= arena.bottom:
-            self._bounce('y')
+        if self._speed_y > 0 and self._rect.bottom >= arena.bottom:
+            self._bounce('y', 0)
             self._rect.top = arena.bottom
 
-        if (self._dir_x < 0 and self._rect.left <= left_bat.right and
+        if (self._speed_x < 0 and self._rect.left <= left_bat.right and
                 self._rect.bottom >= left_bat.top and
                 self._rect.top <= left_bat.bottom):
-            self._bounce('x')
+            self._bounce('x', left_bat.current_move * 1.2)
             self._rect.left = left_bat.right
-        if (self._dir_x > 0 and self._rect.right >= right_bat.left and
+        if (self._speed_x > 0 and self._rect.right >= right_bat.left and
                 self._rect.bottom >= right_bat.top and
                 self._rect.top <= right_bat.bottom):
-            self._bounce('x')
+            self._bounce('x', right_bat.current_move * 1.2)
             self._rect.right = right_bat.left
 
-    def out_of_arena(self, arena):
+    def left_out_of_arena(self, arena):
         if self._rect.left < arena.left:
-            return 1  # left out
-        elif self._rect.right > arena.right:
-            return 2  # right out
+            return True
         else:
-            return 0  # not out
+            return False
 
-    def _bounce(self, axis):
+    def right_out_of_arena(self, arena):
+        if self._rect.right > arena.right:
+            return True
+        else:
+            return False
+
+    def _bounce(self, axis, speed_delta):
         if axis == 'x':
-            self._dir_x *= -1
+            self._speed_x *= -1
+            self._speed_y += speed_delta
         elif axis == 'y':
-            self._dir_y *= -1
+            self._speed_y *= -1
+            self._speed_x += speed_delta
 
     @property
     def dir_x(self):
-        return self._dir_x
+        return self._speed_x
 
     def dir_y(self):
-        return self._dir_y
+        return self._speed_y
 
     @property
     def centerx(self):
@@ -356,13 +306,15 @@ class Bat(pygame.sprite.Sprite):
     def __init__(self, x, y, width, height, speed):
         self._x_init, self._y_init = x, y
         self._speed = speed
+        self._current_move = 0
         self._rect = pygame.Rect(x, y, width, height)
 
     def draw(self, surface):
         pygame.draw.rect(surface, WHITE, self._rect)
 
-    def move(self, direction, arena):
-        self._rect.y += direction * self._speed
+    def move(self, arena, direction):
+        self._current_move = direction * self._speed
+        self._rect.y += self._current_move
         if self._rect.bottom > arena.bottom:
             self._rect.y += arena.bottom - self._rect.bottom
         elif self._rect.top < arena.top:
@@ -387,6 +339,10 @@ class Bat(pygame.sprite.Sprite):
     @property
     def bottom(self):
         return self._rect.bottom
+
+    @property
+    def current_move(self):
+        return self._current_move
 
 
 class AutoBat(Bat):
@@ -417,7 +373,7 @@ class Scoreboard():
 
     def draw(self, surface, score_left, score_right):
         result_surf = self._font.render('Score = %d : %d' %
-                                        (score_left, score_right), True, WHITE)
+                                        (score_left, score_right), True, BLACK)
         rect = result_surf.get_rect()
         rect.topleft = (self._x, self._y)
         surface.blit(result_surf, rect)
