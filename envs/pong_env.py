@@ -14,7 +14,7 @@ WHITE = (255, 255, 255)
 class PongSinglePlayerEnv(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array']}
 
-    def __init__(self, ball_speed=1, bat_speed=1, max_round=20):
+    def __init__(self, ball_speed=4, bat_speed=4, max_num_rounds=20):
         SCREEN_WIDTH, SCREEN_HEIGHT = 160, 210
 
         self.observation_space = spaces.Box(
@@ -29,7 +29,7 @@ class PongSinglePlayerEnv(gym.Env):
             window_size=(SCREEN_WIDTH, SCREEN_HEIGHT),
             ball_speed=ball_speed,
             bat_speed=bat_speed,
-            max_round=max_round)
+            max_num_rounds=max_num_rounds)
 
     def _step(self, action):
         assert self.action_space.contains(action)
@@ -39,7 +39,7 @@ class PongSinglePlayerEnv(gym.Env):
         return (obs, rewards[0], done, {})
 
     def _reset(self):
-        self._game.restart()
+        self._game.reset_game()
         obs = self._get_screen_img()
         return obs
 
@@ -73,7 +73,7 @@ class PongSinglePlayerEnv(gym.Env):
 class PongDoublePlayerEnv(PongSinglePlayerEnv):
     metadata = {'render.modes': ['human', 'rgb_array']}
 
-    def __init__(self, ball_speed=1, bat_speed=1, max_round=20):
+    def __init__(self, ball_speed=4, bat_speed=4, max_num_rounds=20):
         SCREEN_WIDTH, SCREEN_HEIGHT = 160, 210
         self.observation_space = spaces.Tuple([
             spaces.Box(
@@ -93,7 +93,7 @@ class PongDoublePlayerEnv(PongSinglePlayerEnv):
             window_size=(SCREEN_WIDTH, SCREEN_HEIGHT),
             ball_speed=ball_speed,
             bat_speed=bat_speed,
-            max_round=max_round)
+            max_num_rounds=max_num_rounds)
 
     def _step(self, action):
         assert self.action_space.contains(action)
@@ -105,7 +105,7 @@ class PongDoublePlayerEnv(PongSinglePlayerEnv):
         return (obs, rewards, done, {})
 
     def _reset(self):
-        self._game.restart()
+        self._game.reset_game()
         obs = self._get_screen_img_double_player()
         return obs
 
@@ -130,10 +130,12 @@ class PongGame():
                  ball_size=4,
                  ball_speed=1,
                  bat_speed=1,
-                 max_round=20):
-        self._max_round = max_round
+                 max_num_rounds=20,
+                 max_step_per_round=1000):
+        self._max_num_rounds = max_num_rounds
         self._has_double_players = has_double_players
-        self._score_left, self._score_right = 0, 0
+        self._max_step_per_round = max_step_per_round
+        self._num_rounds = 0
 
         self._arena = Arena(window_size, top_border_thickness)
         self._ball = Ball(self._arena.centerx - ball_size // 2,
@@ -152,7 +154,10 @@ class PongGame():
                 bat_speed)
         self._scoreboard = Scoreboard(20, 8, font_size=20)
 
+        self.reset_game()
+
     def step(self, left_bat_move_dir, right_bat_move_dir):
+        self._num_steps += 1
         self._ball.move(self._arena, self._left_bat, self._right_bat)
         self._left_bat.move(self._arena, left_bat_move_dir)
         if self._has_double_players:
@@ -163,25 +168,35 @@ class PongGame():
         if self._ball.left_out_of_arena(self._arena):
             self._score_right += 1
             rewards = (-1, 1)
-            self._ball.reset()
+            self._reset_round()
         elif self._ball.right_out_of_arena(self._arena):
             self._score_left += 1
             rewards = (1, -1)
-            self._ball.reset()
+            self._reset_round()
+        elif self._num_steps > self._max_step_per_round:
+            print("Time out to be a tie round.")
+            rewards = (0, 0)
+            self._reset_round()
         else:
             rewards = (0, 0)
 
-        if self._score_right + self._score_left >= self._max_round:
+        if self._num_rounds >= self._max_num_rounds:
             done = True
         else:
             done = False
         return rewards, done
 
-    def restart(self):
-        self._score_left, self._score_right = 0, 0
+    def _reset_round(self):
         self._ball.reset()
+        self._num_rounds += 1
+        self._num_steps = 0
+
+    def reset_game(self):
+        self._score_left, self._score_right = 0, 0
+        self._reset_round()
         self._left_bat.reset()
         self._right_bat.reset()
+        self._num_rounds = 0
 
     def draw(self, surface):
         self._arena.draw(surface)
@@ -238,22 +253,24 @@ class Ball(pygame.sprite.Sprite):
     def reset(self):
         self._rect.x = self._x_init
         self._rect.y = self._y_init
-        self._speed_x = random.choice([-self._speed, self._speed])
-        self._speed_y = random.choice([-self._speed, self._speed])
+        init_speed_x = self._speed
+        init_speed_y = random.uniform(self._speed * 0.3, self._speed)
+        self._speed_x = random.choice([-init_speed_x, init_speed_x])
+        self._speed_y = random.choice([-init_speed_y, init_speed_y])
 
     def draw(self, surface):
         pygame.draw.rect(surface, WHITE, self._rect)
 
     def move(self, arena, left_bat, right_bat):
-        self._rect.x += (self._speed_x * self._speed)
-        self._rect.y += (self._speed_y * self._speed)
+        self._rect.x += self._speed_x
+        self._rect.y += self._speed_y
 
         if self._speed_y < 0 and self._rect.top <= arena.top:
             self._bounce('y', 0)
             self._rect.top = arena.top
         if self._speed_y > 0 and self._rect.bottom >= arena.bottom:
             self._bounce('y', 0)
-            self._rect.top = arena.bottom
+            self._rect.bottom = arena.bottom
 
         if (self._speed_x < 0 and self._rect.left <= left_bat.right and
                 self._rect.bottom >= left_bat.top and
@@ -287,10 +304,10 @@ class Ball(pygame.sprite.Sprite):
             self._speed_x += speed_delta
 
     @property
-    def dir_x(self):
+    def speed_x(self):
         return self._speed_x
 
-    def dir_y(self):
+    def speed_y(self):
         return self._speed_y
 
     @property
@@ -348,13 +365,13 @@ class Bat(pygame.sprite.Sprite):
 class AutoBat(Bat):
     def move(self, arena, ball):
         #If ball is moving away from paddle, center bat
-        if ball.dir_x < 0:
+        if ball.speed_x < 0:
             if self._rect.centery < arena.centery:
                 self._rect.y += self._speed
             elif self._rect.centery > arena.centery:
                 self._rect.y -= self._speed
-        #if ball moving towards bat, track its movement. 
-        elif ball.dir_x > 0:
+        #if ball moving towards bat, track its movement.
+        elif ball.speed_x > 0:
             if self._rect.centery < ball.centery:
                 self._rect.y += self._speed
             else:

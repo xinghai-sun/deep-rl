@@ -171,7 +171,6 @@ class A3CAgent(object):
             if self._save_to_team is not None and num_async_update % 10 == 0:
                 self._save_to_team.append(copy.deepcopy(self))
             num_async_update += 1
-            print(agent_team)
 
         env.close()
 
