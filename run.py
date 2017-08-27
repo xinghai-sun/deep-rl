@@ -90,7 +90,7 @@ def run(conf):
             #env.render()
             action = agent.act(observation)
             next_observation, reward, done, _ = env.step(action)
-            agent.learn(observation, action, reward, next_observation, done)
+            agent.learn(reward, next_observation, done)
             observation = next_observation
             cum_return += reward
         return_list.append(cum_return)
