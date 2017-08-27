@@ -4,7 +4,8 @@ import yaml
 import gym
 from gym import wrappers
 from agents.a3c import A3CAgent
-from envs.pong_env import Pong1PEnv
+import torch.multiprocessing as mp
+from envs.pong_env import PongSinglePlayerEnv
 from wrappers.process_frame import AtariRescale42x42Wrapper
 from wrappers.process_frame import NormalizeWrapper
 
@@ -28,7 +29,7 @@ def run_all():
         run_async(conf)
 
 
-def run_async(conf):
+def run_async0(conf):
     print("----- Running job [%s] ----- " % conf['job_name'])
 
     def env_generator():
@@ -41,6 +42,49 @@ def run_async(conf):
     agent = create_async_agent(conf, env.action_space, env.observation_space)
     agent.learn_async(env_generator, conf['num_processes'], enable_test=True)
     env.close()
+
+
+def run_async(conf):
+    print("----- Running job [%s] ----- " % conf['job_name'])
+
+    def create_env():
+        env = gym.make(conf['env'])
+        env = AtariRescale42x42Wrapper(env)
+        env = NormalizeWrapper(env)
+        return env
+
+    env = create_env()
+    master_agent = create_async_agent(conf, env.action_space,
+                                      env.observation_space)
+    env.close()
+
+    def learn_thread(process_id):
+        env = create_env()
+        env.seed(process_id)
+        slave_agent = master_agent.create_async_learner()
+        return_list = []
+        for episode in xrange(conf['num_episodes_per_process']):
+            cum_return = 0.0
+            observation = env.reset()
+            done = False
+            while not done:
+                action = slave_agent.act(observation)
+                next_observation, reward, done, _ = env.step(action)
+                slave_agent.learn(reward, next_observation, done)
+                observation = next_observation
+                cum_return += reward
+            return_list.append(cum_return)
+            print("Episode %d/%d Return: %f." %
+                  (episode + 1, conf['num_episodes_per_process'], cum_return))
+        env.close()
+
+    processes = []
+    for process_id in range(0, conf['num_processes']):
+        p = mp.Process(target=learn_thread, args=(process_id, ))
+        p.start()
+        processes.append(p)
+    for p in processes:
+        p.join()
 
 
 if __name__ == '__main__':

@@ -9,9 +9,12 @@ class BaseAgent(object):
         pass
 
     @abstractmethod
-    def act(self, observation):
+    def act(self, observation, greedy=False):
         pass
 
     @abstractmethod
-    def learn(self, observation, action, reward, next_observation, done):
+    def learn(self, reward, next_observation, done):
+        pass
+
+    def reset(self):
         pass

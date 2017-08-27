@@ -15,17 +15,22 @@ from skimage import color
 
 
 class ConvNet(nn.Module):
-    def __init__(self, input_channel, output_size):
+    def __init__(self, num_channel_input, num_output):
         super(ConvNet, self).__init__()
-        self.conv1 = nn.Conv2d(input_channel, 16, kernel_size=8, stride=4)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=4, stride=2)
-        self.fc = nn.Linear(2592, output_size)
+        self.conv1 = nn.Conv2d(num_channel_input, 32, 3, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
+        self.conv4 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
+        self.fc = nn.Linear(32 * 3 * 3, num_output)
 
     def forward(self, x):
-        assert x.size(2) == 84 and x.size(3) == 84
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = self.fc(x.view(x.size(0), -1))
+        assert x.size(2) == 42 and x.size(3) == 42
+        x = F.elu(self.conv1(x))
+        x = F.elu(self.conv2(x))
+        x = F.elu(self.conv3(x))
+        x = F.elu(self.conv4(x))
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
         return x
 
 
@@ -46,37 +51,38 @@ class ConvDQNAgent(BaseAgent):
         self._discount = discount
         self._epsilon = epsilon
         self._q_network = ConvNet(
-            input_channel=observation_space.shape[2],
-            output_size=action_space.n)
+            num_channel_input=observation_space.shape[0],
+            num_output=action_space.n)
         self._optimizer = optim.RMSprop(
             self._q_network.parameters(), lr=learning_rate)
         self._memory = ReplayMemory(100000)
 
-    def act(self, observation):
-        if np.random.random() >= self._epsilon:
-            q_values = self._q_network(
-                Variable(
-                    torch.FloatTensor(
-                        [np.transpose(observation / 255.0, (2, 0, 1))])))
-            _, action = q_values[0].data.max(0)
-            return action[0]
+    def act(self, observation, greedy=False):
+        q_values = self._q_network(
+            Variable(torch.FloatTensor(np.expand_dims(observation, 0))))
+        _, action = q_values[0].data.max(0)
+        greedy_action = action[0]
+        if greedy or np.random.random() >= self._epsilon:
+            action = greedy_action
         else:
-            return self._action_space.sample()
+            action = self._action_space.sample()
+        self._observation = observation
+        self._action = action
+        return action
 
-    def learn(self, observation, action, reward, next_observation, done):
-        observation = np.transpose(observation / 255.0, (2, 0, 1))
-        next_observation = np.transpose(next_observation / 255.0, (2, 0, 1))
+    def learn(self, reward, next_observation, done):
         # experience replay
-        self._memory.push(observation, action, reward, next_observation, done)
+        self._memory.push(self._observation, self._action, reward,
+                          next_observation, done)
         if len(self._memory) < self._batch_size:
             return
         transitions = self._memory.sample(self._batch_size)
         batch = Transition(*zip(*transitions))
         # convert to torch variable
-
         next_observation_batch = Variable(
-            torch.FloatTensor(batch.next_observation), volatile=True)
-        observation_batch = Variable(torch.FloatTensor(batch.observation))
+            torch.from_numpy(np.stack(batch.next_observation)), volatile=True)
+        observation_batch = Variable(
+            torch.from_numpy(np.stack(batch.observation)))
         reward_batch = Variable(torch.FloatTensor(batch.reward))
         action_batch = Variable(torch.LongTensor(batch.action))
         done_batch = Variable(torch.Tensor(batch.done))

@@ -1,11 +1,12 @@
 import gym
 import time
+import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.multiprocessing as mp
 from torch.autograd import Variable
 import torch.optim as optim
+from agents.base_agent import BaseAgent
 
 
 class ActorCriticNet(nn.Module):
@@ -37,7 +38,7 @@ class ActorCriticNet(nn.Module):
         return actor_prob, critic_value, (h, c)
 
 
-class A3CAgent(object):
+class A3CAgent(BaseAgent):
     '''Asynchronous Advantage Actor Critic (A3C) agent.'''
 
     def __init__(self,
@@ -48,154 +49,146 @@ class A3CAgent(object):
                  t_max=20):
         if not isinstance(action_space, gym.spaces.Discrete):
             raise TypeError("Action space type should be Discrete.")
+        self._action_space = action_space
+        self._observation_space = observation_space
         self._learning_rate = learning_rate
         self._discount = discount
         self._t_max = t_max
-        self.reset()
 
         self._shared_model = ActorCriticNet(
             num_channel_input=observation_space.shape[0],
             num_output=action_space.n)
         self._shared_model.share_memory()
+        self._slave_agent_list = []
 
-    def act(self, observation):
-        prob, value, (self._lstm_h, self._lstm_c) = self._shared_model(
+        self.reset()
+
+    def act(self, observation, greedy=False):
+        prob, _, (self._lstm_h, self._lstm_c) = self._shared_model(
             Variable(torch.from_numpy(observation).unsqueeze(0)),
             (self._lstm_h, self._lstm_c))
-        _, action = prob[0].data.max(0)
-        return action[0]
+        greedy_action = prob.max(1)[1].data
+        if greedy:
+            action = greedy_action
+        else:
+            action = prob.multinomial(1).data
+        return action[0, 0]
+
+    def create_async_learner(self):
+        slave_agent = _A3CSlaveAgent(
+            self._shared_model, self._action_space, self._observation_space,
+            self._learning_rate, self._discount, self._t_max)
+        return slave_agent
 
     def reset(self):
         self._lstm_h, self._lstm_c = None, None
 
-    def learn_async(self, env_generator, num_processes, enable_test=True):
-        self._env_generator = env_generator
-        processes = []
-        if enable_test:
-            p = mp.Process(target=self._async_tester, args=(num_processes, ))
-            p.start()
-            processes.append(p)
-        for process_id in range(0, num_processes):
-            p = mp.Process(target=self._async_learner, args=(process_id, ))
-            p.start()
-            processes.append(p)
-        for p in processes:
-            p.join()
+    def learn(self, reward, observation, done):
+        raise RuntimeError(
+            "Not implemented. Please call create_slave_agent to "
+            "generate async learners to perform the learning.")
 
-    def _async_learner(self, process_id):
-        # prepare local env and optimizer
-        torch.manual_seed(process_id)
-        env = self._env_generator()
-        env.seed(process_id)
-        optimizer = optim.Adam(
+
+class _A3CSlaveAgent(BaseAgent):
+    '''Asynchronous Advantage Actor Critic (A3C) agent.'''
+
+    def __init__(self,
+                 shared_model,
+                 action_space,
+                 observation_space,
+                 learning_rate=1e-4,
+                 discount=1.0,
+                 t_max=20):
+        if not isinstance(action_space, gym.spaces.Discrete):
+            raise TypeError("Action space type should be Discrete.")
+        self._shared_model = shared_model
+        self._learning_rate = learning_rate
+        self._discount = discount
+        self._t_max = t_max
+
+        self._local_model = ActorCriticNet(
+            num_channel_input=observation_space.shape[0],
+            num_output=action_space.n)
+        self._optimizer = optim.Adam(
             self._shared_model.parameters(), lr=self._learning_rate)
-        # prepare local model
-        model = ActorCriticNet(
-            num_channel_input=env.observation_space.shape[0],
-            num_output=env.action_space.n)
-        # explore and learn
-        observation = env.reset()
-        done = True
-        cum_rewards = 0
-        while True:
-            model.load_state_dict(self._shared_model.state_dict())
-            if done:
-                lstm_h, lstm_c = None, None
-            else:
-                lstm_h = Variable(lstm_h.data)
-                lstm_c = Variable(lstm_c.data)
 
-            rewards, values, log_probs, entropies = [], [], [], []
-            # take n-step actions
-            for step in xrange(self._t_max):
-                prob, value, (lstm_h, lstm_c) = model(
-                    Variable(torch.from_numpy(observation).unsqueeze(0)),
-                    (lstm_h, lstm_c))
-                log_prob = torch.log(prob)
-                entropy = -(log_prob * prob).sum(1)
-                action = prob.multinomial(1).data
-                action_log_prob = log_prob.gather(1, Variable(action))
-                observation, reward, done, _ = env.step(action[0, 0])
+        self._local_model.load_state_dict(self._shared_model.state_dict())
+        self._lstm_h, self._lstm_c = None, None
 
-                rewards.append(reward)
-                values.append(value)
-                log_probs.append(action_log_prob)
-                entropies.append(entropy)
+        self._rewards = []
+        self._values = []
+        self._log_probs = []
+        self._entropies = []
 
-                cum_rewards += reward
-                if done:
-                    observation = env.reset()
-                    if process_id == 0:
-                        print(cum_rewards)
-                    cum_rewards = 0
-                    break
+    def act(self, observation, greedy=False):
+        prob, value, (self._lstm_h, self._lstm_c) = self._local_model(
+            Variable(torch.from_numpy(observation).unsqueeze(0)),
+            (self._lstm_h, self._lstm_c))
+        greedy_action = prob.max(1)[1].data
+        if greedy:
+            action = greedy_action
+        else:
+            action = prob.multinomial(1).data
+        self._action = action
+        self._prob = prob
+        self._value = value
+        return action[0, 0]
 
+    def reset(self):
+        self._lstm_h, self._lstm_c = None, None
+
+    def learn(self, reward, observation, done):
+        log_prob = torch.log(self._prob)
+        entropy = -(log_prob * self._prob).sum(1)
+        action_log_prob = log_prob.gather(1, Variable(self._action))
+        self._rewards.append(reward)
+        self._values.append(self._value)
+        self._log_probs.append(action_log_prob)
+        self._entropies.append(entropy)
+
+        if done or len(self._rewards) >= self._t_max:
             R = torch.zeros(1, 1)
             if not done:
-                _, value, _ = model(
+                _, value, _ = self._local_model(
                     Variable(torch.from_numpy(observation).unsqueeze(0)),
-                    (lstm_h, lstm_c))
+                    (self._lstm_h, self._lstm_c))
                 R = value.data
-            values.append(Variable(R))
+            self._values.append(Variable(R))
             R = Variable(R)
             gae = torch.zeros(1, 1)
 
-            # n-step loss
+            # compute n-step loss
             value_loss, policy_loss = 0, 0
-            for i in reversed(range(len(rewards))):
-                R = self._discount * R + rewards[i]
-                advantage = R - values[i]
+            for i in reversed(range(len(self._rewards))):
+                R = self._discount * R + self._rewards[i]
+                advantage = R - self._values[i]
                 value_loss += 0.5 * advantage.pow(2)
                 # Generalized Advantage Estimataion
-                delta_t = rewards[i] + self._discount * values[i + 1].data \
-                    - values[i].data
+                delta_t = self._rewards[i] + self._discount * \
+                    self._values[i + 1].data - self._values[i].data
                 gae = gae * self._discount + delta_t
-                policy_loss -= log_probs[i] * Variable(gae) \
-                    + 0.01 * entropies[i]
+                policy_loss -= self._log_probs[i] * Variable(gae) \
+                    + 0.01 * self._entropies[i]
 
-            optimizer.zero_grad()
-            total_loss = policy_loss + 0.5 * value_loss
-            total_loss.backward()
-            torch.nn.utils.clip_grad_norm(model.parameters(), 40)
-            self._share_grads(model)
-            optimizer.step()
-            optimizer.step()
+            # compute grad and optimize
+            self._optimizer.zero_grad()
+            (policy_loss + 0.5 * value_loss).backward()
+            torch.nn.utils.clip_grad_norm(self._local_model.parameters(), 40)
+            self._share_grads(self._local_model)
+            self._optimizer.step()
 
-        env.close()
-
-    def _async_tester(self, process_id):
-        # prepare local env and optimizer
-        torch.manual_seed(process_id)
-        env = self._env_generator()
-        env.seed(process_id)
-        # prepare local model
-        model = ActorCriticNet(
-            num_channel_input=env.observation_space.shape[0],
-            num_output=env.action_space.n)
-        model.eval()
-        # explore and learn
-        model.load_state_dict(self._shared_model.state_dict())
-        lstm_h, lstm_c = None, None
-        observation = env.reset()
-        done = True
-        cum_rewards = 0
-        time_start = time.time()
-        while True:
-            prob, _, (lstm_h, lstm_c) = model(
-                Variable(torch.from_numpy(observation).unsqueeze(0)),
-                (lstm_h, lstm_c))
-            _, action = prob[0].data.max(0)
-            observation, reward, done, _ = env.step(action[0])
-            cum_rewards += reward
+            # clean up
+            self._rewards = []
+            self._values = []
+            self._log_probs = []
+            self._entropies = []
             if done:
-                model.load_state_dict(self._shared_model.state_dict())
-                lstm_h, lstm_c = None, None
-                observation = env.reset()
-                print('[Time=%f] Test Cummutive Rewards: %f' %
-                      (time.time() - time_start, cum_rewards))
-                cum_rewards = 0
-                time.sleep(60)
-        env.close()
+                self._lstm_h, self._lstm_c = None, None
+            else:
+                self._lstm_h = Variable(self._lstm_h.data)
+                self._lstm_c = Variable(self._lstm_c.data)
+                self._local_model.load_state_dict(
+                    self._shared_model.state_dict())
 
     def _share_grads(self, model):
         for param, shared_param in zip(model.parameters(),
