@@ -47,18 +47,23 @@ class DQNAgent(BaseAgent):
             self._q_network.parameters(), lr=learning_rate)
         self._memory = ReplayMemory(100000)
 
-    def act(self, observation):
-        if np.random.random() >= self._epsilon:
-            q_values = self._q_network(
-                Variable(torch.FloatTensor([observation]).view(1, -1)))
-            _, action = q_values[0].data.max(0)
-            return action[0]
+    def act(self, observation, greedy=False):
+        q_values = self._q_network(
+            Variable(torch.FloatTensor([observation]).view(1, -1)))
+        _, action = q_values[0].data.max(0)
+        greedy_action = action[0]
+        if greedy or np.random.random() >= self._epsilon:
+            action = greedy_action
         else:
-            return self._action_space.sample()
+            action = self._action_space.sample()
+        self._observation = observation
+        self._action = action
+        return action
 
-    def learn(self, observation, action, reward, next_observation, done):
+    def learn(self, reward, next_observation, done):
         # experience replay
-        self._memory.push(observation, action, reward, next_observation, done)
+        self._memory.push(self._observation, self._action, reward,
+                          next_observation, done)
         if len(self._memory) < self._batch_size:
             return
         transitions = self._memory.sample(self._batch_size)

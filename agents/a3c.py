@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.optim as optim
+from agents.base_agent import BaseAgent
 
 
 class ActorCriticNet(nn.Module):
@@ -37,7 +38,7 @@ class ActorCriticNet(nn.Module):
         return actor_prob, critic_value, (h, c)
 
 
-class A3CAgent(object):
+class A3CAgent(BaseAgent):
     '''Asynchronous Advantage Actor Critic (A3C) agent.'''
 
     def __init__(self,
@@ -62,12 +63,16 @@ class A3CAgent(object):
 
         self.reset()
 
-    def act(self, observation):
+    def act(self, observation, greedy=False):
         prob, _, (self._lstm_h, self._lstm_c) = self._shared_model(
             Variable(torch.from_numpy(observation).unsqueeze(0)),
             (self._lstm_h, self._lstm_c))
-        _, action = prob[0].data.max(0)
-        return action[0]
+        greedy_action = prob.max(1)[1].data
+        if greedy:
+            action = greedy_action
+        else:
+            action = prob.multinomial(1).data
+        return action[0, 0]
 
     def create_async_learner(self):
         slave_agent = _A3CSlaveAgent(
@@ -81,10 +86,10 @@ class A3CAgent(object):
     def learn(self, reward, observation, done):
         raise RuntimeError(
             "Not implemented. Please call create_slave_agent to "
-            "generate learners to perform the learning.")
+            "generate async learners to perform the learning.")
 
 
-class _A3CSlaveAgent(object):
+class _A3CSlaveAgent(BaseAgent):
     '''Asynchronous Advantage Actor Critic (A3C) agent.'''
 
     def __init__(self,
@@ -115,22 +120,29 @@ class _A3CSlaveAgent(object):
         self._log_probs = []
         self._entropies = []
 
-    def act(self, observation):
-        prob, value, (self._lstm_h, self._lstm_c) = self._shared_model(
+    def act(self, observation, greedy=False):
+        prob, value, (self._lstm_h, self._lstm_c) = self._local_model(
             Variable(torch.from_numpy(observation).unsqueeze(0)),
             (self._lstm_h, self._lstm_c))
-        action = prob.multinomial(1).data
-        self._cur_action = action
-        self._cur_prob = prob
-        self._cur_value = value
+        greedy_action = prob.max(1)[1].data
+        if greedy:
+            action = greedy_action
+        else:
+            action = prob.multinomial(1).data
+        self._action = action
+        self._prob = prob
+        self._value = value
         return action[0, 0]
 
+    def reset(self):
+        self._lstm_h, self._lstm_c = None, None
+
     def learn(self, reward, observation, done):
-        log_prob = torch.log(self._cur_prob)
-        entropy = -(log_prob * self._cur_prob).sum(1)
-        action_log_prob = log_prob.gather(1, Variable(self._cur_action))
+        log_prob = torch.log(self._prob)
+        entropy = -(log_prob * self._prob).sum(1)
+        action_log_prob = log_prob.gather(1, Variable(self._action))
         self._rewards.append(reward)
-        self._values.append(self._cur_value)
+        self._values.append(self._value)
         self._log_probs.append(action_log_prob)
         self._entropies.append(entropy)
 

@@ -3,13 +3,14 @@ import argparse
 import yaml
 import gym
 from gym import wrappers
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from agents.dqn_agent import DQNAgent
 from agents.conv_dqn_agent import ConvDQNAgent
 from agents.random_agent import RandomAgent
 from agents.tabular_q_agent import TabularQAgent
-from envs.pong_env import Pong2PEnv
-from wrappers.process_frame import ResizeFrameWrapper
+from envs.pong_env import PongSinglePlayerEnv
+from wrappers.process_frame import AtariRescale42x42Wrapper
+from wrappers.process_frame import NormalizeWrapper
 
 
 def create_env(conf):
@@ -22,7 +23,8 @@ def wrapper_env(conf, env):
     if conf['monitor_dir']:
         env = wrappers.Monitor(env, conf['monitor_dir'], force=True)
     if conf['agent'] == "conv_dqn":
-        env = ResizeFrameWrapper(env)
+        env = AtariRescale42x42Wrapper(env)
+        env = NormalizeWrapper(env)
     return env
 
 

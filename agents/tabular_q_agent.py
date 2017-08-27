@@ -25,16 +25,21 @@ class TabularQAgent(BaseAgent):
         self._epsilon = epsilon
         self._q = defaultdict(lambda: q_init * np.ones(action_space.n))
 
-    def act(self, observation):
-        if np.random.random() >= self._epsilon:
-            return np.argmax(self._q[observation])
+    def act(self, observation, greedy=False):
+        greedy_action = np.argmax(self._q[observation])
+        if greedy or np.random.random() >= self._epsilon:
+            action = greedy_action
         else:
-            return self._action_space.sample()
+            action = self._action_space.sample()
+        self._observation = observation
+        self._action = action
+        return action
 
-    def learn(self, observation, action, reward, next_observation, done):
+    def learn(self, reward, next_observation, done):
         future = np.max(self._q[next_observation]) if not done else 0.0
-        before = self._q[observation][action]
-        target = self._learning_rate * (
-            reward + self._discount * future - self._q[observation][action])
-        self._q[observation][action] += self._learning_rate * (
-            reward + self._discount * future - self._q[observation][action])
+        before = self._q[self._observation][self._action]
+        target = self._learning_rate * (reward + self._discount * future - \
+            self._q[self._observation][self._action])
+        self._q[self._observation][self._action] += self._learning_rate * (
+            reward + self._discount * future - \
+                self._q[self._observation][self._action])
