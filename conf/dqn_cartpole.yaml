@@ -1,0 +1,10 @@
+job_name: 'DQN for CartPole'
+env: 'CartPole-v0'
+agent: 'dqn'
+num_episodes: 50
+batch_size: 128
+learning_rate: 0.001
+discount: 1.0
+random_explore: 0.05
+use_atari_wrapper: False
+monitor_dir: ''

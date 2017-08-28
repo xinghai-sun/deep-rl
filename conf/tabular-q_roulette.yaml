@@ -1,0 +1,10 @@
+job_name: 'TabularQ for Roulette'
+env: 'Roulette-v0'
+agent: 'tabular_q'
+num_episodes: 50
+q_value_init: 0.0
+learning_rate: 0.1
+discount: 1.0
+random_explore: 0.1
+use_atari_wrapper: False
+monitor_dir: ''
