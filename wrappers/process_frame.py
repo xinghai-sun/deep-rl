@@ -1,15 +1,25 @@
 import cv2
 import gym
+from gym import spaces
 import numpy as np
 
 
 class AtariRescale42x42Wrapper(gym.ObservationWrapper):
     def __init__(self, env=None):
         super(AtariRescale42x42Wrapper, self).__init__(env)
-        self.observation_space = gym.spaces.Box(0.0, 1.0, [1, 42, 42])
+        if isinstance(self.observation_space, spaces.Tuple):
+            self.observation_space = spaces.Tuple([
+                gym.spaces.Box(0.0, 1.0, [1, 42, 42])
+                for space in self.env.observation_space.spaces
+            ])
+        else:
+            self.observation_space = gym.spaces.Box(0.0, 1.0, [1, 42, 42])
 
     def _observation(self, observation):
-        return self._process_frame(observation)
+        if isinstance(observation, tuple):
+            return tuple([self._process_frame(obs) for obs in observation])
+        else:
+            return self._process_frame(observation)
 
     def _process_frame(self, frame):
         assert (frame.ndim == 3 and
@@ -31,6 +41,12 @@ class NormalizeWrapper(gym.ObservationWrapper):
         self._num_steps = 0
 
     def _observation(self, observation):
+        if isinstance(observation, tuple):
+            return tuple([self._normalize(obs) for obs in observation])
+        else:
+            return self._normalize(observation)
+
+    def _normalize(self, observation):
         self._num_steps += 1
         self._state_mean = self._state_mean * self._alpha + \
             observation.mean() * (1 - self._alpha)
