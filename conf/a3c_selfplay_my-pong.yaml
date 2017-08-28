@@ -7,3 +7,4 @@ t_max: 20
 num_processes: 16
 num_episodes_per_process: 1000
 use_atari_wrapper: True
+monitor_dir: 'monitor_results'
