@@ -36,6 +36,8 @@ def run_async(conf):
     env = create_env()
     master_agent = create_async_agent(conf, env.action_space,
                                       env.observation_space)
+    if conf['init_model_path'] != '':
+        master_agent.load_model(conf['init_model_path'])
     env.close()
 
     def learn_thread(process_id):
@@ -56,6 +58,11 @@ def run_async(conf):
             return_list.append(cum_return)
             print("Episode %d/%d Return: %f." %
                   (episode + 1, conf['num_episodes_per_process'], cum_return))
+            # save checkpoints
+            if process_id == 0 and episode % conf['checkpoint_freq'] == 0:
+                model_filename = os.path.join(conf['checkpoint_dir'],
+                                              'agent.model-%d' % episode)
+                master_agent.save_model(model_filename)
         env.close()
 
     processes = []
@@ -78,4 +85,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     conf = yaml.load(file(args.config, 'r'))
+
+    if not os.path.exists(conf['checkpoint_dir']):
+        os.mkdir(conf['checkpoint_dir'])
+
     run_async(conf)
