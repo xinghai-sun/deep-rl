@@ -29,8 +29,10 @@ def create_async_agent(conf, action_space, observation_space):
 def run_async(conf):
     print("----- Running job [%s] ----- " % conf['job_name'])
 
-    def create_env():
+    def create_env(monitor_on=False):
         env = gym.make(conf['env'])
+        if conf['monitor_dir'] != '' and monitor_on:
+            env = wrappers.Monitor(env, conf['monitor_dir'], force=True)
         if conf['use_atari_wrapper']:
             env = AtariRescale42x42Wrapper(env)
             env = NormalizeWrapper(env)
@@ -44,7 +46,7 @@ def run_async(conf):
     agent_team.append(copy.deepcopy(master_agent))
 
     def learn_thread(process_id):
-        env = create_env()
+        env = create_env(monitor_on=process_id == 0)
         env.seed(process_id)
         slave_agent = master_agent.create_async_learner()
         return_list = []
