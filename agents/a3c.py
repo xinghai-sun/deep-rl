@@ -88,6 +88,12 @@ class A3CAgent(BaseAgent):
             "Not implemented. Please call create_slave_agent to "
             "generate async learners to perform the learning.")
 
+    def save_model(self, model_path):
+        torch.save(self._shared_model.state_dict(), model_path)
+
+    def load_model(self, model_path):
+        self._shared_model.load_state_dict(torch.load(model_path))
+
 
 class _A3CSlaveAgent(BaseAgent):
     '''Asynchronous Advantage Actor Critic (A3C) agent.'''

@@ -111,7 +111,7 @@ class PongDoublePlayerEnv(PongSinglePlayerEnv):
 
     def _get_screen_img_double_player(self):
         self._game.draw(self._surface)
-        surface_flipped = pygame.transform.flip(self._surface, True, True)
+        surface_flipped = pygame.transform.flip(self._surface, True, False)
         self._game.draw_scoreboard(self._surface)
         self._game.draw_scoreboard(surface_flipped)
         obs = self._surface_to_img(self._surface)
