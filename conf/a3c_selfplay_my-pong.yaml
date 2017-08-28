@@ -6,5 +6,8 @@ discount: 0.99
 t_max: 20
 num_processes: 16
 num_episodes_per_process: 1000
+init_model_path: 'agent.model-0'
+checkpoint_freq: 20
+checkpoint_dir: 'checkpoints'
 use_atari_wrapper: True
 monitor_dir: 'monitor_results'
