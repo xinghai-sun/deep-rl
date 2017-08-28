@@ -10,8 +10,6 @@ from gym import wrappers
 from gym import spaces
 from agents.base_agent import BaseAgent
 from agents.memory import ReplayMemory, Transition
-from scipy.misc import imresize
-from skimage import color
 
 
 class ConvNet(nn.Module):

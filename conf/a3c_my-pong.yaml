@@ -1,4 +1,4 @@
-job_name: 'A3C for Pong'
+job_name: 'A3C for MyPong'
 env: 'Pong-1p-v0'
 agent: 'a3c'
 learning_rate: 0.0001

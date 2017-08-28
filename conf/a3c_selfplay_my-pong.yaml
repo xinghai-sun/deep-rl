@@ -1,9 +1,9 @@
-job_name: 'A3C for Pong'
+job_name: 'A3C for Self-play MyPong'
 env: 'Pong-2p-v0'
 agent: 'a3c'
 learning_rate: 0.0001
 discount: 0.99
 t_max: 20
-num_processes: 2
+num_processes: 16
 num_episodes_per_process: 1000
 use_atari_wrapper: True
