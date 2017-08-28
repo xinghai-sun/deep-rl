@@ -23,34 +23,14 @@ def create_async_agent(conf, action_space, observation_space):
                             conf['agent'])
 
 
-def run_all():
-    conf_list = yaml.load(file(args.config, 'r'))
-    for conf in conf_list:
-        run_async(conf)
-
-
-def run_async0(conf):
-    print("----- Running job [%s] ----- " % conf['job_name'])
-
-    def env_generator():
-        env = gym.make(conf['env'])
-        env = AtariRescale42x42Wrapper(env)
-        env = NormalizeWrapper(env)
-        return env
-
-    env = env_generator()
-    agent = create_async_agent(conf, env.action_space, env.observation_space)
-    agent.learn_async(env_generator, conf['num_processes'], enable_test=True)
-    env.close()
-
-
 def run_async(conf):
     print("----- Running job [%s] ----- " % conf['job_name'])
 
     def create_env():
         env = gym.make(conf['env'])
-        env = AtariRescale42x42Wrapper(env)
-        env = NormalizeWrapper(env)
+        if conf['use_atari_wrapper']:
+            env = AtariRescale42x42Wrapper(env)
+            env = NormalizeWrapper(env)
         return env
 
     env = create_env()
@@ -92,9 +72,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
-        default="conf/test_async.yaml",
         type=str,
+        required=True,
         help="Configuration file in ymal format.")
     args = parser.parse_args()
 
-    run_all()
+    conf = yaml.load(file(args.config, 'r'))
+    run_async(conf)

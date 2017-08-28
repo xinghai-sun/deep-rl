@@ -3,7 +3,7 @@ import argparse
 import yaml
 import gym
 from gym import wrappers
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from agents.dqn_agent import DQNAgent
 from agents.conv_dqn_agent import ConvDQNAgent
 from agents.random_agent import RandomAgent
@@ -15,14 +15,9 @@ from wrappers.process_frame import NormalizeWrapper
 
 def create_env(conf):
     env = gym.make(conf['env'])
-    env.seed(0)
-    return env
-
-
-def wrapper_env(conf, env):
     if conf['monitor_dir']:
         env = wrappers.Monitor(env, conf['monitor_dir'], force=True)
-    if conf['agent'] == "conv_dqn":
+    if conf['use_atari_wrapper']:
         env = AtariRescale42x42Wrapper(env)
         env = NormalizeWrapper(env)
     return env
@@ -71,17 +66,10 @@ def plot_return(return_list, filepath):
     plt.savefig(filepath)
 
 
-def run_all():
-    conf_list = yaml.load(file(args.config, 'r'))
-    for conf in conf_list:
-        return_list = run(conf)
-        plot_return(return_list, os.path.join('figures', conf['job_name']))
-
-
-def run(conf):
+def run_sync(conf):
     print("----- Running job [%s] ----- " % conf['job_name'])
     env = create_env(conf)
-    env = wrapper_env(conf, env)
+    env.seed(0)
     agent = create_agent(conf, env.action_space, env.observation_space)
     return_list = []
     for episode in xrange(conf['num_episodes']):
@@ -89,7 +77,6 @@ def run(conf):
         observation = env.reset()
         done = False
         while not done:
-            #env.render()
             action = agent.act(observation)
             next_observation, reward, done, _ = env.step(action)
             agent.learn(reward, next_observation, done)
@@ -106,9 +93,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
-        default="conf/example.yaml",
         type=str,
+        required=True,
         help="Configuration file in ymal format.")
     args = parser.parse_args()
 
-    run_all()
+    conf = yaml.load(file(args.config, 'r'))
+    return_list = run_sync(conf)
+    plot_return(return_list, os.path.join('figures', conf['job_name']))
