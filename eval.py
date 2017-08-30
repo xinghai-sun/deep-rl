@@ -40,7 +40,7 @@ def run_eval(conf, num_episodes, eval_model_path):
     agent = create_agent(conf, env.action_space, env.observation_space)
     agent.load_model(eval_model_path)
 
-    sum_return = 0
+    sum_return = 0.0
     for episode in xrange(num_episodes):
         cum_return = 0.0
         observation = env.reset()
@@ -53,7 +53,7 @@ def run_eval(conf, num_episodes, eval_model_path):
         sum_return += cum_return
         print("Episode %d/%d Return: %f." %
               (episode + 1, num_episodes, cum_return))
-    print("Average Return: %f." % sum_return / num_episodes)
+    print("Average Return: %f." % (sum_return / num_episodes))
     env.close()
 
 
@@ -65,7 +65,7 @@ def run_selfplay_eval(conf, num_episodes, eval_model_path):
     agent.load_model(eval_model_path)
     opponent_agent = copy.deepcopy(agent)
 
-    sum_return = 0
+    sum_return = 0.0
     for episode in xrange(num_episodes):
         cum_return = 0.0
         observation = env.reset()
@@ -82,7 +82,7 @@ def run_selfplay_eval(conf, num_episodes, eval_model_path):
         sum_return += cum_return
         print("Episode %d/%d Return: %f." %
               (episode + 1, num_episodes, cum_return))
-    print("Average Return: %f." % sum_return / num_episodes)
+    print("Average Return: %f." % (sum_return / num_episodes))
     env.close()
 
 
@@ -114,7 +114,7 @@ def run_combat_eval(conf, num_episodes, eval_model_path, eval_opponent_path):
         sum_return += cum_return
         print("Episode %d/%d Return: %f." %
               (episode + 1, num_episodes, cum_return))
-    print("Average Return: %f." % sum_return / num_episodes)
+    print("Average Return: %f." % (sum_return / num_episodes))
     env.close()
 
 
@@ -129,7 +129,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--num_episodes",
         type=int,
-        default=20,
+        default=10,
         help="Number of evaluative episodes.")
     parser.add_argument(
         "--mode",

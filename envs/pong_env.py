@@ -158,12 +158,12 @@ class PongGame():
 
     def step(self, left_bat_move_dir, right_bat_move_dir):
         self._num_steps += 1
-        self._ball.move(self._arena, self._left_bat, self._right_bat)
         self._left_bat.move(self._arena, left_bat_move_dir)
         if self._has_double_players:
             self._right_bat.move(self._arena, right_bat_move_dir)
         else:
             self._right_bat.move(self._arena, self._ball)
+        self._ball.move(self._arena, self._left_bat, self._right_bat)
 
         if self._ball.left_out_of_arena(self._arena):
             self._score_right += 1
@@ -253,7 +253,7 @@ class Ball(pygame.sprite.Sprite):
     def reset(self):
         self._rect.x = self._x_init
         self._rect.y = self._y_init
-        init_speed_x = self._speed
+        init_speed_x = float(self._speed)
         init_speed_y = random.uniform(self._speed * 0.3, self._speed)
         self._speed_x = random.choice([-init_speed_x, init_speed_x])
         self._speed_y = random.choice([-init_speed_y, init_speed_y])
@@ -262,26 +262,36 @@ class Ball(pygame.sprite.Sprite):
         pygame.draw.rect(surface, WHITE, self._rect)
 
     def move(self, arena, left_bat, right_bat):
+        prev_ball_left = self._rect.left
+        prev_ball_right = self._rect.right
+        y_on_right_bat = (right_bat.left - self._rect.right) / self._speed_x * \
+                self._speed_y + self._rect.y
+        y_on_left_bat = (left_bat.right - self._rect.left) / self._speed_x * \
+                self._speed_y + self._rect.y
+
         self._rect.x += self._speed_x
         self._rect.y += self._speed_y
 
         if self._speed_y < 0 and self._rect.top <= arena.top:
             self._bounce('y', 0)
             self._rect.top = arena.top
-        if self._speed_y > 0 and self._rect.bottom >= arena.bottom:
+        elif self._speed_y > 0 and self._rect.bottom >= arena.bottom:
             self._bounce('y', 0)
             self._rect.bottom = arena.bottom
-
-        if (self._speed_x < 0 and self._rect.left <= left_bat.right and
-                self._rect.bottom >= left_bat.top and
-                self._rect.top <= left_bat.bottom):
-            self._bounce('x', left_bat.current_move * 1.2)
+        elif (self._speed_x < 0 and self._rect.left <= left_bat.right and
+              y_on_left_bat + self._rect.height >= left_bat.top and
+              y_on_left_bat <= left_bat.bottom and
+              prev_ball_left > left_bat.right):
+            self._bounce('x', left_bat.current_move * 0.7)
             self._rect.left = left_bat.right
-        if (self._speed_x > 0 and self._rect.right >= right_bat.left and
-                self._rect.bottom >= right_bat.top and
-                self._rect.top <= right_bat.bottom):
-            self._bounce('x', right_bat.current_move * 1.2)
+            self._rect.y = y_on_left_bat
+        elif (self._speed_x > 0 and self._rect.right >= right_bat.left and
+              y_on_right_bat + self._rect.height >= right_bat.top and
+              y_on_right_bat <= right_bat.bottom and
+              prev_ball_right < right_bat.left):
+            self._bounce('x', right_bat.current_move * 0.7)
             self._rect.right = right_bat.left
+            self._rect.y = y_on_right_bat
 
     def left_out_of_arena(self, arena):
         if self._rect.left < arena.left:
