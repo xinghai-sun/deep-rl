@@ -10,4 +10,4 @@ init_model_path: ''
 checkpoint_freq: 20
 checkpoint_dir: 'checkpoints'
 use_atari_wrapper: True
-monitor_dir: ''
+monitor_dir: 'monitor_result'

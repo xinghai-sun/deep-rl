@@ -46,6 +46,7 @@ def run_async(conf):
         env = create_env(monitor_on=process_id == 0)
         env.seed(process_id)
         slave_agent = master_agent.create_async_learner()
+        slave_agent.reset()
         return_list = []
         for episode in xrange(conf['num_episodes_per_process']):
             cum_return = 0.0

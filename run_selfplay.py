@@ -49,14 +49,16 @@ def run_async(conf):
         env = create_env(monitor_on=process_id == 0)
         env.seed(process_id)
         slave_agent = master_agent.create_async_learner()
-        return_list = []
         agent_team = deque(maxlen=1)
         agent_team.append(copy.deepcopy(master_agent))
+        return_list = []
         for episode in xrange(conf['num_episodes_per_process']):
             cum_return = 0.0
             observation = env.reset()
             done = False
             opponent_agent = random.choice(agent_team)
+            slave_agent.reset()
+            opponent_agent.reset()
             while not done:
                 obs_A, obs_B = observation
                 action = slave_agent.act(obs_A)
